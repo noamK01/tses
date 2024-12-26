@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>קביעת תורים למספרה</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            max-width: 800px;
+            margin-top: 2rem;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .form-control {
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card p-4">
+            <h1 class="text-center mb-4">קביעת תור למספרה</h1>
+            
+            <form id="appointmentForm">
+                <div class="mb-3">
+                    <label for="clientName" class="form-label">שם מלא</label>
+                    <input type="text" class="form-control" id="clientName" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="phone" class="form-label">טלפון</label>
+                    <input type="tel" class="form-control" id="phone" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="service" class="form-label">סוג השירות</label>
+                    <select class="form-select" id="service" required>
+                        <option value="">בחר שירות</option>
+                        <option value="תספורת">תספורת</option>
+                        <option value="צבע">צבע</option>
+                        <option value="תסרוקת">תסרוקת</option>
+                        <option value="החלקה">החלקה</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="dateTime" class="form-label">תאריך ושעה</label>
+                    <input type="text" class="form-control" id="dateTime" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary w-100">קבע תור</button>
+            </form>
+        </div>
+
+        <div class="card mt-4 p-4">
+            <h2 class="text-center mb-4">התורים הקרובים</h2>
+            <div id="appointmentsList"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/he.js"></script>
+    <script>
+        // התחברות לשרת Socket.IO
+        const socket = io();
+
+        // האזנה לעדכוני תורים
+        socket.on('appointment_update', function(data) {
+            if (data.action === 'create') {
+                // הוספת תור חדש לרשימה
+                addAppointmentToList(data.appointment);
+            } else if (data.action === 'delete') {
+                // מחיקת תור מהרשימה
+                removeAppointmentFromList(data.appointment_id);
+            }
+        });
+
+        function addAppointmentToList(appointment) {
+            const appointmentsList = document.getElementById('appointmentsList');
+            const appointmentElement = createAppointmentElement(appointment);
+            
+            // בדיקה אם התור כבר קיים
+            const existingAppointment = document.querySelector(`[data-appointment-id="${appointment.id}"]`);
+            if (existingAppointment) {
+                existingAppointment.replaceWith(appointmentElement);
+            } else {
+                appointmentsList.insertBefore(appointmentElement, appointmentsList.firstChild);
+            }
+        }
+
+        function removeAppointmentFromList(appointmentId) {
+            const appointmentElement = document.querySelector(`[data-appointment-id="${appointmentId}"]`);
+            if (appointmentElement) {
+                appointmentElement.remove();
+            }
+        }
+
+        function createAppointmentElement(appointment) {
+            const div = document.createElement('div');
+            div.className = 'card mb-2 p-2';
+            div.setAttribute('data-appointment-id', appointment.id);
+            div.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${appointment.client_name}</strong> - ${appointment.service}
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            ${new Date(appointment.date_time).toLocaleString('he-IL')}
+                        </div>
+                        <button class="btn btn-danger btn-sm" onclick="deleteAppointment(${appointment.id})">
+                            מחק תור
+                        </button>
+                    </div>
+                </div>
+            `;
+            return div;
+        }
+
+        flatpickr("#dateTime", {
+            enableTime: true,
+            dateFormat: "Y-m-d H:i",
+            locale: "he",
+            minDate: "today",
+            time_24hr: true
+        });
+
+        document.getElementById('appointmentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const appointmentData = {
+                client_name: document.getElementById('clientName').value,
+                phone: document.getElementById('phone').value,
+                service: document.getElementById('service').value,
+                date_time: document.getElementById('dateTime').value
+            };
+
+            try {
+                const response = await fetch('/api/appointments', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(appointmentData)
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message);
+                    e.target.reset();
+                } else {
+                    alert('שגיאה: ' + result.error);
+                }
+            } catch (error) {
+                alert('שגיאה בשמירת התור');
+            }
+        });
+
+        async function deleteAppointment(id) {
+            if (!confirm('האם אתה בטוח שברצונך למחוק את התור?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/appointments/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message);
+                } else {
+                    alert('שגיאה: ' + result.error);
+                }
+            } catch (error) {
+                alert('שגיאה במחיקת התור');
+            }
+        }
+
+        // טעינת תורים בעת טעינת הדף
+        async function loadAppointments() {
+            try {
+                const response = await fetch('/api/appointments');
+                const appointments = await response.json();
+                
+                const appointmentsList = document.getElementById('appointmentsList');
+                appointmentsList.innerHTML = '';
+                appointments.forEach(appointment => {
+                    addAppointmentToList(appointment);
+                });
+            } catch (error) {
+                console.error('Error loading appointments:', error);
+            }
+        }
+
+        // טעינת תורים בעת טעינת הדף
+        loadAppointments();
+    </script>
+</body>
+</html>
